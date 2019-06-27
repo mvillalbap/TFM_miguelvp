@@ -11,6 +11,7 @@
 #include "fsm.h"
 #include "shareData.h"
 
+// Tamaños de los buffer circulares
 #define BUFFER_UART1	64
 #define BUFFER_UART2	64
 #define BUFFER_UART3	128

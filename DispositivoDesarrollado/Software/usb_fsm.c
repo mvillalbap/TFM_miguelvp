@@ -11,12 +11,15 @@
 #include "stm32l4xx_hal_uart.h"
 #include <string.h>
 
+// UARTs
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
+// USB
 USBD_HandleTypeDef hUsbDeviceFS;
 
+// Dato recibido nuevo
 static uint8_t new;
 
 // Funciones de comprobación
@@ -77,8 +80,8 @@ static uint8_t firstStep (fsm_t *this)
 /*
  * @brief	Comprobación de si hay datos a enviar
  * @param	this: máquina de estados a evaluar
- * @retval	1 -> Hay datos a enviar
- * 			0 -> No hay datos a enviar
+ * @retval	!0 -> Hay datos a enviar
+ * 			 0 -> No hay datos a enviar
  */
 static uint8_t sendData (fsm_t *this)
 {
@@ -88,8 +91,8 @@ static uint8_t sendData (fsm_t *this)
 /*
  * @brief	Comprobación de si se han enviado todos los datos
  * @param	this: máquina de estados a evaluar
- * @retval	1 -> Se han enviado todos los datos
- * 			0 -> No se han enviado todos los datos
+ * @retval	!0 -> Se han enviado todos los datos
+ * 			 0 -> No se han enviado todos los datos
  */
 static uint8_t allSent (fsm_t *this)
 {
@@ -99,8 +102,8 @@ static uint8_t allSent (fsm_t *this)
 /*
  * @brief	Comprobación de si hay datos nuevos recibidos por USB
  * @param	this: máquina de estados a evaluar
- * @retval	1 -> Hay datos nuevos
- * 			0 -> No hay datos nuevos
+ * @retval	!0 -> Hay datos nuevos
+ * 			 0 -> No hay datos nuevos
  */
 static uint8_t checkUSB (fsm_t *this)
 {
@@ -110,8 +113,8 @@ static uint8_t checkUSB (fsm_t *this)
 /*
  * @brief	Comprobación de si hay datos nuevos recibidos por la UART1
  * @param	this: máquina de estados a evaluar
- * @retval	1 -> Hay datos nuevos
- * 			0 -> No hay datos nuevos
+ * @retval	!0 -> Hay datos nuevos
+ * 			 0 -> No hay datos nuevos
  */
 static uint8_t checkUART1 (fsm_t *this)
 {
@@ -121,8 +124,8 @@ static uint8_t checkUART1 (fsm_t *this)
 /*
  * @brief	Comprobación de si hay datos nuevos recibidos por la UART2
  * @param	this: máquina de estados a evaluar
- * @retval	1 -> Hay datos nuevos
- * 			0 -> No hay datos nuevos
+ * @retval	!0 -> Hay datos nuevos
+ * 			 0 -> No hay datos nuevos
  */
 static uint8_t checkUART2 (fsm_t *this)
 {
@@ -132,29 +135,29 @@ static uint8_t checkUART2 (fsm_t *this)
 /*
  * @brief	Comprobación de si hay datos nuevos recibidos por la UART3
  * @param	this: máquina de estados a evaluar
- * @retval	1 -> Hay datos nuevos
- * 			0 -> No hay datos nuevos
+ * @retval	!0 -> Hay datos nuevos
+ * 			 0 -> No hay datos nuevos
  */
 static uint8_t checkUART3 (fsm_t *this)
 {
 	return (BUFFER_UART3 - ((pilePointers_t*)this->data)->pileUART3->tail) != ((huart3.hdmarx)->Instance->CNDTR);
 }
 
-
-// Tener cuidado cuando se cree el buffer circular de envío que no sea de un tamaño superior a 8 bits porque:
-// 1. No es necesario que sea tan grande porque por terminal no se va a enviar grandes datos
-// 2. Habría que hacerlo de varias veces (lastPoint hecho para por si acaso se quieren enviar muchos datos)
-
+/*
+ * @brief	Configuración de las DMA para asignarlas a los buffer creados previamente
+ * 			para cada una de las UART
+ * @param	this: máquina de estados a evaluar
+ * @retval	Nada
+ */
 static void setup (fsm_t *this)
 {
-
 	HAL_UART_Receive_DMA(&huart1, ((pilePointers_t*)this->data)->pileUART1->buffer, BUFFER_UART1);
 	HAL_UART_Receive_DMA(&huart2, ((pilePointers_t*)this->data)->pileUART2->buffer, BUFFER_UART2);
 	HAL_UART_Receive_DMA(&huart3, ((pilePointers_t*)this->data)->pileUART3->buffer, BUFFER_UART3);
 }
 
 /*
- * @brief	Envía datos por USB que haya en el buffer de transmisión
+ * @brief	Envía datos por USB y para el módulo NB-IoT que haya en el buffer de transmisión
  * @param	this: máquina de estados de la acción
  * @retval	Nada
  */
@@ -162,21 +165,8 @@ static void sendUSB (fsm_t *this)
 {
 	uint8_t *data, result;
 	uint16_t *flags;
-	uint16_t len = 0;
 
 	flags = ((pilePointers_t*)this->data)->flags;
-
-	// Longitud del mensaje a enviar
-	/*len = notSendTX();
-	if ((data = (uint8_t*) pvPortMalloc(sizeof(uint8_t)*len)) == NULL) {
-		unlockTX();
-	}
-
-	if (!getTX(data, len)) {
-		vPortFree(data);
-		unlockTX();
-		return;
-	}*/
 
 	if (((USBD_CDC_HandleTypeDef*)(hUsbDeviceFS.pClassData))->TxState == 0) {
 
@@ -192,17 +182,6 @@ static void sendUSB (fsm_t *this)
 		} else {
 			*flags = *flags & ~TX_DATA;
 		}
-
-
-		// Enviamos
-		// result = CDC_Transmit_FS(data, strlen((char*) data));
-
-		// Si se ha enviado bien, limpiamos el flag. Si no, vuelve al buffer el mensaje
-		/*if (result != USBD_OK) {
-			putTX(data, strlen((char*) data));
-		} else if (!notSendTX())
-			*flags = *flags & ~TX_DATA;
-		vPortFree(data);*/
 
 		unlockTX();
 	}
@@ -221,6 +200,11 @@ static void sendUSB (fsm_t *this)
 
 }
 
+/*
+ * @brief	Vuelta del envío de información
+ * @param	this: máquina de estados a evaluar
+ * @retval	Nada
+ */
 static void flush (fsm_t *this)
 {
 	// Por ahora no tiene uso la vuelta a RX
@@ -241,7 +225,7 @@ static void update (fsm_t *this)
 }
 
 /*
- * @brief	Actualiza el estado de la señal de datos en el buffer de recepción
+ * @brief	Actualiza el buffer circular asociado a la UART1
  * @param	this: máquina de estados de la acción
  * @retval	Nada
  */
@@ -253,15 +237,10 @@ static void dataUART1 (fsm_t *this)
 	osMutexWait(((pilePointers_t*)this->data)->pileLock, 0);
 	tail = ((pilePointers_t*)this->data)->pileUART1->tail;
 	do {
-		if (((pilePointers_t*)this->data)->pileUART1->buffer[tail] == '\r') { // || ((pilePointers_t*)this->data)->pileUART1->buffer[head] == '>'
-			//if (tail != ((((pilePointers_t*)this->data)->pileUART1->tail+1) % ((pilePointers_t*)this->data)->pileUART1->size)) {
+		if (((pilePointers_t*)this->data)->pileUART1->buffer[tail] == '\r') {
 				flags = ((pilePointers_t*)this->data)->flags;
 				*flags = *flags | RESPOND_STN;
 				((pilePointers_t*)this->data)->pileUART1->head = (tail+1) % BUFFER_UART1;
-			/*} else {
-				((pilePointers_t*)this->data)->pileUART1->head = tail;
-				((pilePointers_t*)this->data)->pileUART1->tail = tail;
-			}*/
 			osMutexRelease(((pilePointers_t*)this->data)->pileLock);
 			return;
 		}
@@ -278,7 +257,7 @@ static void dataUART1 (fsm_t *this)
 }
 
 /*
- * @brief	Actualiza el estado de la señal de datos en el buffer de recepción
+ * @brief	Actualiza el buffer circular asociado a la UART2
  * @param	this: máquina de estados de la acción
  * @retval	Nada
  */
@@ -294,19 +273,22 @@ static void dataUART2 (fsm_t *this)
 		pos = ((pilePointers_t*)this->data)->pileUART2->head;
 		do {
 			charVal = ((pilePointers_t*)this->data)->pileUART2->buffer[pos];
+			// Comienzo del mensaje
 			if (charVal == '$') {
 				flagCheck = 1;
-			} else if (flagCheck && charVal == 'V') {
+
+			// Comprobación de si el valor es válido o no o si ha llegado al checksum
+			} else if (flagCheck && (charVal == 'V' || charVal == '*')) {
 				flagCheck = 0;
+
+			// Análisis de los datos de posición recibidos
 			} else if (flagCheck && (charVal == 'E' || charVal == 'W')) {
 				flagCheck = 0;
 				if (pos >= 23) {
-					//((pilePointers_t*)this->data)->pileUART2->tail = (pos - 23) % BUFFER_UART2;
 					strcpy((char*) lastLat, (char*) &(((pilePointers_t*)this->data)->pileUART2->buffer[pos-23]));
 					strcpy((char*) lastLong, (char*) &(((pilePointers_t*)this->data)->pileUART2->buffer[pos-11]));
 					((pilePointers_t*)this->data)->pileUART2->tail = pos;
 				} else if (pos >= 11) {
-					//((pilePointers_t*)this->data)->pileUART2->tail = (pos - 23) % BUFFER_UART2;
 					for(j = (BUFFER_UART2 - (23 - pos)); (j < BUFFER_UART2) && ((BUFFER_UART2 - j) < 12); j++)
 						lastLat[j - (BUFFER_UART2 - (23 - pos))] = ((pilePointers_t*)this->data)->pileUART2->buffer[j];
 					for(j = (23 - pos); (j < pos) && (j < 12); j++)
@@ -334,7 +316,7 @@ static void dataUART2 (fsm_t *this)
 }
 
 /*
- * @brief	Actualiza el estado de la señal de datos en el buffer de recepción
+ * @brief	Actualiza el buffer circular asociado a la UART3
  * @param	this: máquina de estados de la acción
  * @retval	Nada
  */
@@ -361,6 +343,8 @@ static void dataUART3 (fsm_t *this)
 		} else if (start && (((pilePointers_t*)this->data)->pileUART3->buffer[tail] == '\n')) {
 			start = 2;
 			seqFlag = 1;
+
+		// Secuencia de nuevo valor
 		} else if(seqFlag) {
 			switch (seqFlag) {
 			case 1:
